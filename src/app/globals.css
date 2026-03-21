@@ -1,10 +1,13 @@
+/* Importa o Tailwind CSS (v4) para utilitarios e reset base. */
 @import "tailwindcss";
 
+/* Variaveis padrao para tema claro. */
 :root {
   --background: #ffffff;
   --foreground: #171717;
 }
 
+/* Mapeia variaveis CSS para tokens usados pelo Tailwind. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -12,6 +15,7 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Ajusta paleta quando o sistema estiver em dark mode. */
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
@@ -19,6 +23,7 @@
   }
 }
 
+/* Define estilo base aplicado ao body inteiro. */
 body {
   background: var(--background);
   color: var(--foreground);

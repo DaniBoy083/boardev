@@ -1,11 +1,21 @@
-export default function DashboardPage() {
-  return (
-    <section className="mx-auto flex min-h-[calc(100vh-152px)] w-full max-w-6xl flex-col items-center justify-center px-4 py-12 text-white">
-      <h1 className="text-3xl font-bold sm:text-4xl">Dashboard</h1>
-      <p className="mt-4 max-w-xl text-center text-zinc-300">
-        Esta e a area do seu painel. Aqui voce pode acompanhar tarefas, progresso
-        e atualizacoes da plataforma.
-      </p>
-    </section>
-  );
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+import { authOptions } from "../api/auth/[...nextauth]/route";
+import { DashboardClient } from "../../components/dashboard/dashboard-client";
+
+// Correcao: em App Router o titulo da pagina e definido via metadata,
+// nao via <Head> do next/head (que nao funciona no app/).
+export const metadata = { title: "Dashboard | Boardev" };
+
+// Pagina de dashboard exibida na rota "/dashboard".
+export default async function DashboardPage() {
+  // Verifica sessao no servidor — necessario para proteger a rota.
+  const session = await getServerSession(authOptions);
+
+  // Correcao: sem sessao, redireciona para login usando redirect() do next/navigation.
+  if (!session) {
+    redirect("/login");
+  }
+
+  return <DashboardClient sessionName={session.user?.name ?? session.user?.email ?? ""} />; {/* Renderiza o componente cliente do dashboard, passando o nome do usuario para saudacao personalizada. */}
 }
