@@ -41,7 +41,7 @@ export function Header() {
                         </span>
                         <button
                             onClick={() => signOut()}
-                            className="rounded-full border border-zinc-500 px-4 py-1.5 text-sm font-semibold text-white transition-colors hover:border-zinc-300 hover:bg-zinc-900 sm:px-7 sm:py-2"
+                            className="cursor-pointer rounded-full border border-zinc-500 px-4 py-1.5 text-sm font-semibold text-white transition-colors hover:border-zinc-300 hover:bg-zinc-900 sm:px-7 sm:py-2"
                         >
                             Sair
                         </button>

@@ -333,7 +333,7 @@ export default function SharedTaskPage() {
             <span className="text-xs text-zinc-500">Comentando como {viewerName}</span>
             <button
               type="submit"
-              className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-zinc-200"
+              className="cursor-pointer rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-zinc-200"
             >
               Comentar
             </button>
@@ -362,7 +362,7 @@ export default function SharedTaskPage() {
                         onClick={() =>
                           setPendingParentId((current) => (current === comment.id ? null : comment.id))
                         }
-                        className="text-xs font-medium text-zinc-300 underline underline-offset-4 hover:text-white"
+                        className="cursor-pointer text-xs font-medium text-zinc-300 underline underline-offset-4 hover:text-white"
                       >
                         Responder
                       </button>
@@ -371,7 +371,7 @@ export default function SharedTaskPage() {
                           type="button"
                           onClick={() => handleDeleteComment(comment.id)}
                           title="Excluir comentario"
-                          className="shrink-0 text-zinc-300 transition-colors hover:text-red-400"
+                          className="shrink-0 cursor-pointer text-zinc-300 transition-colors hover:text-red-400"
                         >
                           <FaTrash size={14} />
                         </button>
@@ -396,14 +396,14 @@ export default function SharedTaskPage() {
                         <button
                           type="button"
                           onClick={() => setPendingParentId(null)}
-                          className="rounded-md border border-zinc-500 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-700"
+                          className="cursor-pointer rounded-md border border-zinc-500 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-700"
                         >
                           Cancelar
                         </button>
                         <button
                           type="button"
                           onClick={() => handleCreateReply(comment.id)}
-                          className="rounded-md bg-white px-3 py-1 text-xs font-semibold text-black hover:bg-zinc-200"
+                          className="cursor-pointer rounded-md bg-white px-3 py-1 text-xs font-semibold text-black hover:bg-zinc-200"
                         >
                           Enviar resposta
                         </button>
@@ -426,7 +426,7 @@ export default function SharedTaskPage() {
                                   type="button"
                                   onClick={() => handleDeleteComment(reply.id)}
                                   title="Excluir resposta"
-                                  className="shrink-0 text-zinc-300 transition-colors hover:text-red-400"
+                                  className="shrink-0 cursor-pointer text-zinc-300 transition-colors hover:text-red-400"
                                 >
                                   <FaTrash size={12} />
                                 </button>

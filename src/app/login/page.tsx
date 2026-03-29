@@ -19,7 +19,7 @@ export default function LoginPage() {
         {/* Botao de login com Google */}
         <button
           onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
-          className="mt-8 flex w-full items-center justify-center gap-3 rounded-lg border border-zinc-600 bg-zinc-800 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 active:bg-zinc-600"
+          className="mt-8 flex w-full cursor-pointer items-center justify-center gap-3 rounded-lg border border-zinc-600 bg-zinc-800 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 active:bg-zinc-600"
         >
           {/* Icone do Google em SVG para nao depender de biblioteca externa */}
           <svg

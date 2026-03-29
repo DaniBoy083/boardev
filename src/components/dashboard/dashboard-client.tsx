@@ -238,7 +238,7 @@ export function DashboardClient({ sessionName, userEmail }: DashboardClientProps
           <button
             type="submit"
             disabled={!hasUserEmail} // Desabilita o botao se o email do usuario nao estiver presente, prevenindo criacao de tarefas sem associacao de usuario.
-            className="w-full rounded-lg bg-white py-2.5 text-sm font-semibold text-black transition-colors hover:bg-zinc-200"
+            className="w-full cursor-pointer rounded-lg bg-white py-2.5 text-sm font-semibold text-black transition-colors hover:bg-zinc-200"
           >
             Salvar task
           </button>
@@ -259,7 +259,7 @@ export function DashboardClient({ sessionName, userEmail }: DashboardClientProps
                     <button
                       type="button"
                       onClick={() => handleShareTask(task.id)}
-                      className="text-sm text-zinc-300 transition-colors hover:text-white"
+                      className="cursor-pointer text-sm text-zinc-300 transition-colors hover:text-white"
                     >
                       <FiShare2 size={16} />
                     </button>
@@ -280,7 +280,7 @@ export function DashboardClient({ sessionName, userEmail }: DashboardClientProps
                     type="button"
                     onClick={() => handleDeleteTask(task.id)}
                     title="Deletar tarefa"
-                    className="shrink-0 text-zinc-300 transition-colors hover:text-red-400"
+                    className="shrink-0 cursor-pointer text-zinc-300 transition-colors hover:text-red-400"
                   >
                     <FaTrash size={16} />
                   </button>
