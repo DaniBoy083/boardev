@@ -4,6 +4,9 @@ import { firebaseApiKey, firebaseProjectId } from "../../../services/firebaseCon
 // Forca resposta dinamica para evitar cache estatico de metricas.
 export const dynamic = "force-dynamic";
 
+const firestoreProjectId = process.env.FIREBASE_PROJECT_ID ?? firebaseProjectId;
+const firestoreApiKey = process.env.FIREBASE_WEB_API_KEY ?? firebaseApiKey;
+
 type FirestoreValue = {
   timestampValue?: string;
 };
@@ -40,10 +43,10 @@ function isWithinLast30Days(timestampValue?: string): boolean {
 // Monta endpoint REST do Firestore para listar documentos de qualquer colecao/subcolecao.
 function getCollectionEndpoint(pathSegments: string[], pageToken?: string): string {
   const encodedPath = pathSegments.map(encodeURIComponent).join("/");
-  const base = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/${encodedPath}`;
+  const base = `https://firestore.googleapis.com/v1/projects/${firestoreProjectId}/databases/(default)/documents/${encodedPath}`;
 
   const params = new URLSearchParams();
-  params.set("key", firebaseApiKey);
+  params.set("key", firestoreApiKey);
   params.set("pageSize", "200");
   if (pageToken) {
     params.set("pageToken", pageToken);
@@ -82,6 +85,10 @@ function getDocumentId(documentName: string): string {
 
 export async function GET() {
   try {
+    if (!firestoreProjectId || !firestoreApiKey) {
+      throw new Error("Firestore credentials not configured for metrics route.");
+    }
+
     // 1) Busca todas as tarefas para contar posts recentes.
     const tasks = await listAllDocuments(["tasks"]);
 
