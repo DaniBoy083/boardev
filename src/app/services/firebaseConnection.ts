@@ -20,4 +20,8 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
+// Exportado para montar URLs da REST API do Firestore no backend.
+export const firebaseProjectId = firebaseConfig.projectId;
+// Exportado para autenticar chamadas REST server-side sem depender do SDK web.
+export const firebaseApiKey = firebaseConfig.apiKey;
 export { db };

@@ -17,5 +17,13 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  return <DashboardClient sessionName={session.user?.name ?? session.user?.email ?? ""} />; {/* Renderiza o componente cliente do dashboard, passando o nome do usuario para saudacao personalizada. */}
+  const sessionName = session.user?.name ?? session.user?.email ?? ""; // Usa nome ou email como identificador minimo da sessao.
+  const userEmail = session.user?.email ?? ""; // Armazena email do usuario para associar as tarefas criadas, garantindo que cada tarefa seja vinculada a um usuario especifico.
+
+  // Se a sessao estiver anomala (sem identificador minimo), volta ao login.
+  if (!sessionName) {
+    redirect("/login");
+  }
+
+  return <DashboardClient sessionName={sessionName} userEmail={userEmail} />;
 }
