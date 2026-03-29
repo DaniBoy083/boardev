@@ -25,6 +25,8 @@ NEXTAUTH_URL=http://localhost:3000
 NEXT_PUBLIC_URL=http://localhost:3000
 FIREBASE_PROJECT_ID=boardev-c50f6
 FIREBASE_WEB_API_KEY=sua_web_api_key_do_firebase
+FIREBASE_CLIENT_EMAIL=seu_service_account_client_email
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 ```
 
 ## Produção

@@ -7,9 +7,7 @@ import { useSession } from "next-auth/react";
 import { FaTrash } from "react-icons/fa";
 import toast from "react-hot-toast";
 import {
-  addDoc,
   collection,
-  deleteDoc,
   doc,
   getDoc,
   onSnapshot,
@@ -144,7 +142,6 @@ export default function SharedTaskPage() {
 
   const viewerName = session?.user?.name?.trim() || "Visitante";
   const viewerEmail = session?.user?.email?.trim() || null;
-  const canInteractWithThreads = Boolean(viewerEmail);
 
   function canDeleteComment(authorEmail: string | null): boolean {
     return Boolean(viewerEmail && authorEmail && viewerEmail === authorEmail);
@@ -153,7 +150,7 @@ export default function SharedTaskPage() {
   async function handleCreateComment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!canInteractWithThreads) {
+    if (!viewerEmail) {
       toast.error("Faca login para comentar.");
       return;
     }
@@ -164,13 +161,22 @@ export default function SharedTaskPage() {
     }
 
     try {
-      await addDoc(collection(db, "tasks", taskId, "threads"), {
-        message,
-        authorName: viewerName,
-        authorEmail: viewerEmail,
-        parentId: null,
-        createdAt: new Date(),
+      const response = await fetch("/api/threads", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          taskId,
+          message,
+          parentId: null,
+        }),
       });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        throw new Error(payload.message ?? "Falha ao criar comentario.");
+      }
 
       setNewComment("");
       toast.success("Comentario enviado.");
@@ -181,7 +187,7 @@ export default function SharedTaskPage() {
   }
 
   async function handleCreateReply(parentId: string) {
-    if (!canInteractWithThreads) {
+    if (!viewerEmail) {
       toast.error("Faca login para responder.");
       return;
     }
@@ -192,28 +198,22 @@ export default function SharedTaskPage() {
     }
 
     try {
-      // Garante profundidade maxima de 1 nivel: resposta so pode apontar para comentario raiz.
-      const parentRef = doc(db, "tasks", taskId, "threads", parentId);
-      const parentSnapshot = await getDoc(parentRef);
-
-      if (!parentSnapshot.exists()) {
-        toast.error("Comentario original nao encontrado.");
-        return;
-      }
-
-      const parentData = parentSnapshot.data() as Partial<ThreadComment>;
-      if (typeof parentData.parentId === "string" && parentData.parentId.length > 0) {
-        toast.error("Apenas um nivel de resposta e permitido nesta thread.");
-        return;
-      }
-
-      await addDoc(collection(db, "tasks", taskId, "threads"), {
-        message,
-        authorName: viewerName,
-        authorEmail: viewerEmail,
-        parentId,
-        createdAt: new Date(),
+      const response = await fetch("/api/threads", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          taskId,
+          message,
+          parentId,
+        }),
       });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        throw new Error(payload.message ?? "Falha ao criar resposta.");
+      }
 
       setReplyDrafts((current) => ({ ...current, [parentId]: "" }));
       setPendingParentId(null);
@@ -224,7 +224,7 @@ export default function SharedTaskPage() {
     }
   }
 
-  async function handleDeleteComment(commentId: string, parentId: string | null) {
+  async function handleDeleteComment(commentId: string) {
     if (!taskId) {
       return;
     }
@@ -246,28 +246,23 @@ export default function SharedTaskPage() {
     }
 
     try {
-      const idsToDelete = [commentId];
+      const response = await fetch("/api/threads", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          taskId,
+          commentId,
+        }),
+      });
 
-      // Se for comentario raiz, remove tambem as respostas da thread.
-      if (!parentId) {
-        const threadReplies = comments.filter((item) => item.parentId === commentId);
-        const hasRepliesFromOtherUsers = threadReplies.some(
-          (item) => !canDeleteComment(item.authorEmail)
-        );
-
-        if (hasRepliesFromOtherUsers) {
-          toast.error("Nao e possivel excluir a thread com respostas de outros usuarios.");
-          return;
-        }
-
-        const replyIds = threadReplies.map((item) => item.id);
-        idsToDelete.push(...replyIds);
-        setPendingParentId((current) => (current === commentId ? null : current));
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        throw new Error(payload.message ?? "Falha ao remover comentario.");
       }
 
-      await Promise.all(
-        idsToDelete.map((id) => deleteDoc(doc(db, "tasks", taskId, "threads", id)))
-      );
+      setPendingParentId((current) => (current === commentId ? null : current));
 
       toast.success("Comentario removido com sucesso.");
     } catch (error) {
@@ -332,18 +327,12 @@ export default function SharedTaskPage() {
             value={newComment}
             onChange={(event) => setNewComment(event.target.value)}
             placeholder="Escreva um comentario para iniciar uma thread..."
-            disabled={!canInteractWithThreads}
             className="min-h-24 rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-zinc-400"
           />
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-zinc-500">
-              {canInteractWithThreads
-                ? `Comentando como ${viewerName}`
-                : "Faca login para participar da discussao."}
-            </span>
+            <span className="text-xs text-zinc-500">Comentando como {viewerName}</span>
             <button
               type="submit"
-              disabled={!canInteractWithThreads}
               className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-zinc-200"
             >
               Comentar
@@ -380,7 +369,7 @@ export default function SharedTaskPage() {
                       {canDeleteComment(comment.authorEmail) ? (
                         <button
                           type="button"
-                          onClick={() => handleDeleteComment(comment.id, null)}
+                          onClick={() => handleDeleteComment(comment.id)}
                           title="Excluir comentario"
                           className="shrink-0 text-zinc-300 transition-colors hover:text-red-400"
                         >
@@ -401,7 +390,6 @@ export default function SharedTaskPage() {
                           }))
                         }
                         placeholder="Escreva sua resposta..."
-                        disabled={!canInteractWithThreads}
                         className="min-h-20 w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-zinc-400"
                       />
                       <div className="mt-2 flex items-center justify-end gap-2">
@@ -415,7 +403,6 @@ export default function SharedTaskPage() {
                         <button
                           type="button"
                           onClick={() => handleCreateReply(comment.id)}
-                          disabled={!canInteractWithThreads}
                           className="rounded-md bg-white px-3 py-1 text-xs font-semibold text-black hover:bg-zinc-200"
                         >
                           Enviar resposta
@@ -437,7 +424,7 @@ export default function SharedTaskPage() {
                               {canDeleteComment(reply.authorEmail) ? (
                                 <button
                                   type="button"
-                                  onClick={() => handleDeleteComment(reply.id, comment.id)}
+                                  onClick={() => handleDeleteComment(reply.id)}
                                   title="Excluir resposta"
                                   className="shrink-0 text-zinc-300 transition-colors hover:text-red-400"
                                 >

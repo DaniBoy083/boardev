@@ -1,36 +1,30 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() {
-      return request.auth != null;
+    function hasText(value) {
+      return value is string && value.size() > 0;
     }
 
-    function userEmail() {
-      return request.auth.token.email;
+    function validOwnerEmail(emailField) {
+      return emailField is string && emailField.size() > 0;
     }
 
-    function isOwnerEmail(fieldEmail) {
-      return isSignedIn() && fieldEmail is string && userEmail() == fieldEmail;
-    }
-
-    // Tarefas: leitura ampla para telas publicas e dashboard, escrita so pelo dono autenticado.
+    // Tarefas: leitura ampla e validacao basica de payload para escrita.
     match /tasks/{taskId} {
       allow read: if true;
 
-      allow create: if isOwnerEmail(request.resource.data.email);
-      allow update, delete: if isOwnerEmail(resource.data.email);
+      allow create: if hasText(request.resource.data.task)
+        && validOwnerEmail(request.resource.data.email)
+        && request.resource.data.createdAt is timestamp;
 
-      // Threads: leitura publica e escrita/apagacao apenas pelo autor autenticado.
+      allow update, delete: if true;
+
+      // Threads: leitura publica e validacao de estrutura para escrita.
       match /threads/{commentId} {
         allow read: if true;
 
-        allow create: if isOwnerEmail(request.resource.data.authorEmail)
-          && request.resource.data.message is string
-          && request.resource.data.message.size() > 0
-          && request.resource.data.parentId in [null, string]
-          && request.resource.data.createdAt is timestamp;
-
-        allow update, delete: if isOwnerEmail(resource.data.authorEmail);
+        // Escrita via client desabilitada: criacao/exclusao passam pela API server-side.
+        allow create, update, delete: if false;
       }
     }
   }
