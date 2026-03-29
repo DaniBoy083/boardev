@@ -144,9 +144,19 @@ export default function SharedTaskPage() {
 
   const viewerName = session?.user?.name?.trim() || "Visitante";
   const viewerEmail = session?.user?.email?.trim() || null;
+  const canInteractWithThreads = Boolean(viewerEmail);
+
+  function canDeleteComment(authorEmail: string | null): boolean {
+    return Boolean(viewerEmail && authorEmail && viewerEmail === authorEmail);
+  }
 
   async function handleCreateComment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!canInteractWithThreads) {
+      toast.error("Faca login para comentar.");
+      return;
+    }
 
     const message = newComment.trim();
     if (!message || !taskId) {
@@ -171,6 +181,11 @@ export default function SharedTaskPage() {
   }
 
   async function handleCreateReply(parentId: string) {
+    if (!canInteractWithThreads) {
+      toast.error("Faca login para responder.");
+      return;
+    }
+
     const message = (replyDrafts[parentId] ?? "").trim();
     if (!message || !taskId) {
       return;
@@ -214,6 +229,17 @@ export default function SharedTaskPage() {
       return;
     }
 
+    const targetComment = comments.find((item) => item.id === commentId);
+    if (!targetComment) {
+      toast.error("Comentario nao encontrado.");
+      return;
+    }
+
+    if (!canDeleteComment(targetComment.authorEmail)) {
+      toast.error("Voce so pode excluir seus proprios comentarios.");
+      return;
+    }
+
     const shouldDelete = window.confirm("Tem certeza que deseja excluir este comentario?");
     if (!shouldDelete) {
       return;
@@ -224,9 +250,17 @@ export default function SharedTaskPage() {
 
       // Se for comentario raiz, remove tambem as respostas da thread.
       if (!parentId) {
-        const replyIds = comments
-          .filter((item) => item.parentId === commentId)
-          .map((item) => item.id);
+        const threadReplies = comments.filter((item) => item.parentId === commentId);
+        const hasRepliesFromOtherUsers = threadReplies.some(
+          (item) => !canDeleteComment(item.authorEmail)
+        );
+
+        if (hasRepliesFromOtherUsers) {
+          toast.error("Nao e possivel excluir a thread com respostas de outros usuarios.");
+          return;
+        }
+
+        const replyIds = threadReplies.map((item) => item.id);
         idsToDelete.push(...replyIds);
         setPendingParentId((current) => (current === commentId ? null : current));
       }
@@ -298,12 +332,18 @@ export default function SharedTaskPage() {
             value={newComment}
             onChange={(event) => setNewComment(event.target.value)}
             placeholder="Escreva um comentario para iniciar uma thread..."
+            disabled={!canInteractWithThreads}
             className="min-h-24 rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-zinc-400"
           />
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-zinc-500">Comentando como {viewerName}</span>
+            <span className="text-xs text-zinc-500">
+              {canInteractWithThreads
+                ? `Comentando como ${viewerName}`
+                : "Faca login para participar da discussao."}
+            </span>
             <button
               type="submit"
+              disabled={!canInteractWithThreads}
               className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-zinc-200"
             >
               Comentar
@@ -337,14 +377,16 @@ export default function SharedTaskPage() {
                       >
                         Responder
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteComment(comment.id, null)}
-                        title="Excluir comentario"
-                        className="shrink-0 text-zinc-300 transition-colors hover:text-red-400"
-                      >
-                        <FaTrash size={14} />
-                      </button>
+                      {canDeleteComment(comment.authorEmail) ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteComment(comment.id, null)}
+                          title="Excluir comentario"
+                          className="shrink-0 text-zinc-300 transition-colors hover:text-red-400"
+                        >
+                          <FaTrash size={14} />
+                        </button>
+                      ) : null}
                     </div>
                   </div>
 
@@ -359,6 +401,7 @@ export default function SharedTaskPage() {
                           }))
                         }
                         placeholder="Escreva sua resposta..."
+                        disabled={!canInteractWithThreads}
                         className="min-h-20 w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-zinc-400"
                       />
                       <div className="mt-2 flex items-center justify-end gap-2">
@@ -372,6 +415,7 @@ export default function SharedTaskPage() {
                         <button
                           type="button"
                           onClick={() => handleCreateReply(comment.id)}
+                          disabled={!canInteractWithThreads}
                           className="rounded-md bg-white px-3 py-1 text-xs font-semibold text-black hover:bg-zinc-200"
                         >
                           Enviar resposta
@@ -390,14 +434,16 @@ export default function SharedTaskPage() {
                               <span className="text-[11px] text-zinc-500">
                                 {formatCommentDate(reply.createdAt)}
                               </span>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteComment(reply.id, comment.id)}
-                                title="Excluir resposta"
-                                className="shrink-0 text-zinc-300 transition-colors hover:text-red-400"
-                              >
-                                <FaTrash size={12} />
-                              </button>
+                              {canDeleteComment(reply.authorEmail) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteComment(reply.id, comment.id)}
+                                  title="Excluir resposta"
+                                  className="shrink-0 text-zinc-300 transition-colors hover:text-red-400"
+                                >
+                                  <FaTrash size={12} />
+                                </button>
+                              ) : null}
                             </div>
                           </header>
                           <p className="text-sm text-zinc-200">{reply.message}</p>
