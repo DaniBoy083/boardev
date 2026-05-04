@@ -56,6 +56,12 @@ npm run dev
 npm run lint
 ```
 
+- Testes unitarios:
+
+```bash
+npm run test
+```
+
 - Build de produção:
 
 ```bash
@@ -67,3 +73,14 @@ npm run build
 ```bash
 npm run start
 ```
+
+## Arquitetura
+
+O projeto foi organizado em camadas explicitas para reduzir acoplamento e concentrar regras:
+
+- `src/domain/`: entidades, tipos, regras puras e erros de dominio.
+- `src/application/`: portas, validacoes e casos de uso.
+- `src/infrastructure/`: adaptadores concretos para Firebase e HTTP.
+- `src/app/` e `src/components/`: UI, rotas e composicao.
+
+Essa divisao permite testar regras sem depender de React, rota HTTP ou Firestore real.

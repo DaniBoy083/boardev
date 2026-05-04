@@ -7,38 +7,31 @@ import { useSession } from "next-auth/react";
 import { FaTrash } from "react-icons/fa";
 import toast from "react-hot-toast";
 import {
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  orderBy,
-  query,
-  type Timestamp,
-} from "firebase/firestore";
-import { db } from "../../services/firebaseConnection";
-
-type Task = {
-  task: string;
-  isPublic: boolean;
-  createdAt?: Timestamp;
-};
-
-type ThreadComment = {
-  id: string;
-  message: string;
-  authorName: string;
-  authorEmail: string | null;
-  parentId: string | null;
-  createdAt?: Timestamp;
-};
+  createThreadFromApiUseCase,
+  deleteThreadFromApiUseCase,
+  getSharedTaskUseCase,
+  observeTaskThreadsUseCase,
+} from "@/src/application/use-cases/boardev";
+import {
+  calculateThreadMetrics,
+  groupRepliesByParent,
+  isAppError,
+  isRootThread,
+  type TaskRecord,
+  type ThreadRecord,
+} from "@/src/domain/boardev";
+import {
+  firebaseClientBoardevRepository,
+} from "@/src/infrastructure/firebase/client-boardev-repository";
+import { browserBoardevApi } from "@/src/infrastructure/http/browser-boardev-api";
 
 export default function SharedTaskPage() {
   const { data: session } = useSession();
   const params = useParams<{ id: string }>();
   const taskId = params?.id;
 
-  const [task, setTask] = useState<Task | null>(null);
-  const [comments, setComments] = useState<ThreadComment[]>([]);
+  const [task, setTask] = useState<TaskRecord | null>(null);
+  const [comments, setComments] = useState<ThreadRecord[]>([]);
   const [newComment, setNewComment] = useState("");
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [pendingParentId, setPendingParentId] = useState<string | null>(null);
@@ -54,29 +47,13 @@ export default function SharedTaskPage() {
       }
 
       try {
-        const taskDoc = await getDoc(doc(db, "tasks", taskId));
-
-        if (!taskDoc.exists()) {
-          setErrorMessage("Tarefa nao encontrada.");
-          setIsLoading(false);
-          return;
-        }
-
-        const data = taskDoc.data() as Partial<Task>;
-        if (!data.isPublic) {
-          setErrorMessage("Esta tarefa e privada e nao pode ser compartilhada.");
-          setIsLoading(false);
-          return;
-        }
-
-        setTask({
-          task: typeof data.task === "string" ? data.task : "",
-          isPublic: Boolean(data.isPublic),
-          createdAt: data.createdAt,
-        });
+        const loadedTask = await getSharedTaskUseCase(firebaseClientBoardevRepository, taskId);
+        setTask(loadedTask);
       } catch (error) {
         console.error("Erro ao carregar tarefa compartilhada:", error);
-        setErrorMessage("Nao foi possivel carregar a tarefa.");
+        setErrorMessage(
+          isAppError(error) ? error.message : "Nao foi possivel carregar a tarefa."
+        );
       } finally {
         setIsLoading(false);
       }
@@ -90,26 +67,10 @@ export default function SharedTaskPage() {
       return;
     }
 
-    const threadRef = collection(db, "tasks", taskId, "threads");
-    const q = query(threadRef, orderBy("createdAt", "asc"));
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const loadedComments = snapshot.docs.map((item) => {
-          const data = item.data() as Partial<ThreadComment>;
-          return {
-            id: item.id,
-            message: typeof data.message === "string" ? data.message : "",
-            authorName: typeof data.authorName === "string" ? data.authorName : "Visitante",
-            authorEmail: typeof data.authorEmail === "string" ? data.authorEmail : null,
-            parentId: typeof data.parentId === "string" ? data.parentId : null,
-            createdAt: data.createdAt,
-          };
-        });
-
-        setComments(loadedComments);
-      },
+    const unsubscribe = observeTaskThreadsUseCase(
+      firebaseClientBoardevRepository,
+      taskId,
+      setComments,
       (error) => {
         console.error("Erro ao carregar comentarios:", error);
       }
@@ -118,27 +79,10 @@ export default function SharedTaskPage() {
     return () => unsubscribe();
   }, [taskId, task?.isPublic]);
 
-  const repliesByParent = useMemo(() => {
-    const grouped = new Map<string, ThreadComment[]>();
+  const repliesByParent = useMemo(() => groupRepliesByParent(comments), [comments]);
 
-    for (const comment of comments) {
-      if (!comment.parentId) {
-        continue;
-      }
-
-      const parentReplies = grouped.get(comment.parentId) ?? [];
-      parentReplies.push(comment);
-      grouped.set(comment.parentId, parentReplies);
-    }
-
-    return grouped;
-  }, [comments]);
-
-  const rootComments = useMemo(
-    () => comments.filter((comment) => !comment.parentId),
-    [comments]
-  );
-  const replyCount = comments.length - rootComments.length;
+  const rootComments = useMemo(() => comments.filter(isRootThread), [comments]);
+  const threadMetrics = useMemo(() => calculateThreadMetrics(comments), [comments]);
 
   const viewerName = session?.user?.name?.trim() || "Visitante";
   const viewerEmail = session?.user?.email?.trim() || null;
@@ -161,28 +105,17 @@ export default function SharedTaskPage() {
     }
 
     try {
-      const response = await fetch("/api/threads", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          taskId,
-          message,
-          parentId: null,
-        }),
+      await createThreadFromApiUseCase(browserBoardevApi, {
+        taskId,
+        message,
+        parentId: null,
       });
-
-      if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        throw new Error(payload.message ?? "Falha ao criar comentario.");
-      }
 
       setNewComment("");
       toast.success("Comentario enviado.");
     } catch (error) {
       console.error("Erro ao enviar comentario:", error);
-      toast.error("Nao foi possivel enviar o comentario.");
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel enviar o comentario.");
     }
   }
 
@@ -198,29 +131,18 @@ export default function SharedTaskPage() {
     }
 
     try {
-      const response = await fetch("/api/threads", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          taskId,
-          message,
-          parentId,
-        }),
+      await createThreadFromApiUseCase(browserBoardevApi, {
+        taskId,
+        message,
+        parentId,
       });
-
-      if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        throw new Error(payload.message ?? "Falha ao criar resposta.");
-      }
 
       setReplyDrafts((current) => ({ ...current, [parentId]: "" }));
       setPendingParentId(null);
       toast.success("Resposta enviada.");
     } catch (error) {
       console.error("Erro ao enviar resposta:", error);
-      toast.error("Nao foi possivel enviar a resposta.");
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel enviar a resposta.");
     }
   }
 
@@ -246,37 +168,26 @@ export default function SharedTaskPage() {
     }
 
     try {
-      const response = await fetch("/api/threads", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          taskId,
-          commentId,
-        }),
+      await deleteThreadFromApiUseCase(browserBoardevApi, {
+        taskId,
+        commentId,
       });
-
-      if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        throw new Error(payload.message ?? "Falha ao remover comentario.");
-      }
 
       setPendingParentId((current) => (current === commentId ? null : current));
 
       toast.success("Comentario removido com sucesso.");
     } catch (error) {
       console.error("Erro ao remover comentario:", error);
-      toast.error("Nao foi possivel remover o comentario.");
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel remover o comentario.");
     }
   }
 
-  function formatCommentDate(timestamp?: Timestamp) {
-    if (!timestamp?.toDate) {
+  function formatCommentDate(createdAt: Date | null) {
+    if (!createdAt) {
       return "agora";
     }
 
-    return timestamp.toDate().toLocaleString("pt-BR");
+    return createdAt.toLocaleString("pt-BR");
   }
 
   if (isLoading) {
@@ -303,21 +214,21 @@ export default function SharedTaskPage() {
       <h1 className="text-2xl font-bold text-white">Detalhes da tarefa</h1>
       <section className="rounded-xl border border-zinc-700 bg-zinc-900 p-5">
         <p className="text-sm uppercase tracking-wide text-zinc-400">Publica</p>
-        <p className="mt-3 text-base text-zinc-100">{task?.task}</p>
+        <p className="mt-3 wrap-break-word text-base text-zinc-100">{task?.task}</p>
       </section>
 
       <section className="rounded-xl border border-zinc-700 bg-zinc-900 p-5">
         <div className="mb-4">
           <h2 className="text-lg font-semibold text-white">Comentários</h2>
-          <div className="mt-3 flex items-center gap-2 text-xs text-zinc-400">
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
             <span className="rounded-full border border-zinc-600 px-2 py-1">
-              {rootComments.length} thread{rootComments.length === 1 ? "" : "s"}
+              {threadMetrics.threads} thread{threadMetrics.threads === 1 ? "" : "s"}
             </span>
             <span className="rounded-full border border-zinc-600 px-2 py-1">
-              {comments.length} comentario{comments.length === 1 ? "" : "s"}
+              {threadMetrics.comments} comentario{threadMetrics.comments === 1 ? "" : "s"}
             </span>
             <span className="rounded-full border border-zinc-600 px-2 py-1">
-              {replyCount} resposta{replyCount === 1 ? "" : "s"}
+              {threadMetrics.replies} resposta{threadMetrics.replies === 1 ? "" : "s"}
             </span>
           </div>
         </div>
@@ -327,9 +238,9 @@ export default function SharedTaskPage() {
             value={newComment}
             onChange={(event) => setNewComment(event.target.value)}
             placeholder="Escreva um comentario para iniciar uma thread..."
-            className="min-h-24 rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-zinc-400"
+            className="min-h-24 w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-zinc-400"
           />
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-xs text-zinc-500">Comentando como {viewerName}</span>
             <button
               type="submit"
@@ -349,14 +260,14 @@ export default function SharedTaskPage() {
 
               return (
                 <article key={comment.id} className="rounded-lg border border-zinc-700 bg-zinc-800 p-4">
-                  <header className="mb-2 flex items-center justify-between gap-2">
+                  <header className="mb-2 flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
                     <strong className="text-sm text-white">{comment.authorName}</strong>
                     <span className="text-xs text-zinc-500">{formatCommentDate(comment.createdAt)}</span>
                   </header>
-                  <p className="text-sm leading-relaxed text-zinc-100">{comment.message}</p>
+                  <p className="wrap-break-word text-sm leading-relaxed text-zinc-100">{comment.message}</p>
 
                   <div className="mt-3">
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-4">
                       <button
                         type="button"
                         onClick={() =>
@@ -392,7 +303,7 @@ export default function SharedTaskPage() {
                         placeholder="Escreva sua resposta..."
                         className="min-h-20 w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-zinc-400"
                       />
-                      <div className="mt-2 flex items-center justify-end gap-2">
+                      <div className="mt-2 flex flex-wrap items-center gap-2 sm:justify-end">
                         <button
                           type="button"
                           onClick={() => setPendingParentId(null)}
@@ -415,9 +326,9 @@ export default function SharedTaskPage() {
                     <div className="mt-4 space-y-3 border-l border-zinc-600 pl-4">
                       {replies.map((reply) => (
                         <div key={reply.id} className="rounded-md border border-zinc-700 bg-zinc-900 p-3">
-                          <header className="mb-1 flex items-center justify-between gap-2">
+                          <header className="mb-1 flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
                             <strong className="text-xs text-zinc-100">{reply.authorName}</strong>
-                            <div className="flex items-center gap-3">
+                            <div className="flex flex-wrap items-center gap-3">
                               <span className="text-[11px] text-zinc-500">
                                 {formatCommentDate(reply.createdAt)}
                               </span>
@@ -433,7 +344,7 @@ export default function SharedTaskPage() {
                               ) : null}
                             </div>
                           </header>
-                          <p className="text-sm text-zinc-200">{reply.message}</p>
+                          <p className="wrap-break-word text-sm text-zinc-200">{reply.message}</p>
                         </div>
                       ))}
                     </div>

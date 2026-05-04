@@ -1,47 +1,33 @@
 "use client"; // Indica que este componente deve ser renderizado no cliente, pois utiliza hooks de estado e eventos do React.
 
-import { useEffect, useMemo, useState, ChangeEvent, type FormEvent } from "react";
+import { type ChangeEvent, useEffect, useMemo, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { FaTrash } from "react-icons/fa";
 import { FiShare2 } from "react-icons/fi";
 import toast from "react-hot-toast";
-import { Textarea } from "../textarea/textarea";
-import { db } from "../../app/services/firebaseConnection";
 import {
-  doc,
-  deleteDoc,
-  collection,
-  addDoc,
-  query,
-  where,
-  onSnapshot,
-  type Timestamp,
-} from "firebase/firestore";
-import Link from "next/link";
+  createTaskUseCase,
+  deleteTaskUseCase,
+  observeTaskThreadMetricsUseCase,
+  observeUserTasksUseCase,
+} from "@/src/application/use-cases/boardev";
+import type { TaskRecord, ThreadMetrics } from "@/src/domain/boardev";
+import {
+  firebaseClientBoardevRepository,
+} from "@/src/infrastructure/firebase/client-boardev-repository";
+import { Textarea } from "../textarea/textarea";
 
 type DashboardClientProps = {
   sessionName: string;
   userEmail: string;
 };
 
-type Task = {
-  id: string;
-  task: string;
-  isPublic: boolean;
-  createdAt?: Timestamp;
-};
-
-type TaskThreadMetrics = {
-  threads: number;
-  comments: number;
-  replies: number;
-};
-
 // UI interativa do dashboard separada como Client Component.
 export function DashboardClient({ sessionName, userEmail }: DashboardClientProps) {
   const [input, setInput] = useState(""); // Estado para controlar o valor do textarea de input da tarefa.
   const [isPublic, setIsPublic] = useState(false); // Estado para controlar a checkbox de visibilidade da tarefa.
-  const [tasks, setTasks] = useState<Task[]>([]); // Estado para armazenar as tarefas carregadas do Firestore.
-  const [threadMetricsByTask, setThreadMetricsByTask] = useState<Record<string, TaskThreadMetrics>>({});
+  const [tasks, setTasks] = useState<TaskRecord[]>([]); // Estado para armazenar as tarefas carregadas do Firestore.
+  const [threadMetricsByTask, setThreadMetricsByTask] = useState<Record<string, ThreadMetrics>>({});
   const hasUserEmail = userEmail.trim().length > 0; // Verifica se o email do usuario esta presente e nao e apenas espacos em branco.
   const visibleTasks = useMemo(
     () => (hasUserEmail ? tasks : []),
@@ -49,42 +35,21 @@ export function DashboardClient({ sessionName, userEmail }: DashboardClientProps
   ); // Se o email do usuario nao estiver presente, nao exibe nenhuma tarefa, prevenindo exibicao de tarefas sem associacao de usuario.
 
   useEffect(() => {
-    if (!hasUserEmail) { // Se o email do usuario nao estiver presente, nao tenta carregar tarefas do Firestore, prevenindo erros de consulta e exibicao de tarefas sem associacao de usuario.
+    if (!hasUserEmail) {
       return;
     }
 
-    const tasksRef = collection(db, "tasks");
-    // Evita query composta (where + orderBy) para nao depender de indice manual no Firestore.
-    const q = query(tasksRef, where("email", "==", userEmail.trim()));
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const loadedTasks = snapshot.docs
-          .map((doc) => {
-            const data = doc.data() as Partial<Task>;
-            return {
-              id: doc.id,
-              task: typeof data.task === "string" ? data.task : "",
-              isPublic: Boolean(data.isPublic),
-              createdAt: data.createdAt,
-            };
-          })
-          .sort((a, b) => {
-            const aTime = a.createdAt?.toMillis?.() ?? 0; // Converte createdAt para timestamp numérico para ordenação, tratando casos onde createdAt pode ser indefinido ou não um Timestamp válido.
-            const bTime = b.createdAt?.toMillis?.() ?? 0; // Mesma conversão para bTime, garantindo que tarefas sem createdAt sejam tratadas como mais antigas.
-            return bTime - aTime;
-          });
-
-        setTasks(loadedTasks);
-      },
+    const unsubscribe = observeUserTasksUseCase(
+      firebaseClientBoardevRepository,
+      userEmail,
+      setTasks,
       (error) => {
         console.error("Erro ao carregar tarefas:", error);
         toast.error("Nao foi possivel carregar suas tarefas.");
-      }
+      },
     );
 
-    return () => unsubscribe(); // Limpa o listener do Firestore quando o componente for desmontado ou quando o email do usuario mudar, prevenindo vazamento de memoria e consultas desnecessarias.
+    return () => unsubscribe();
   }, [hasUserEmail, userEmail]); // O useEffect depende de hasUserEmail e userEmail para recarregar as tarefas corretamente quando o email do usuario mudar, garantindo que as tarefas exibidas estejam sempre associadas ao usuario correto.
 
   useEffect(() => {
@@ -93,29 +58,19 @@ export function DashboardClient({ sessionName, userEmail }: DashboardClientProps
     }
 
     const publicTasks = visibleTasks.filter((task) => task.isPublic);
+
     if (publicTasks.length === 0) {
       return;
     }
 
     const unsubscribers = publicTasks.map((task) =>
-      onSnapshot(
-        collection(db, "tasks", task.id, "threads"),
-        (snapshot) => {
-          let threads = 0;
-
-          for (const item of snapshot.docs) {
-            const data = item.data() as { parentId?: string | null };
-            if (!data.parentId) {
-              threads += 1;
-            }
-          }
-
-          const comments = snapshot.size;
-          const replies = comments - threads;
-
+      observeTaskThreadMetricsUseCase(
+        firebaseClientBoardevRepository,
+        task.id,
+        (metrics) => {
           setThreadMetricsByTask((current) => ({
             ...current,
-            [task.id]: { threads, comments, replies },
+            [task.id]: metrics,
           }));
         },
         (error) => {
@@ -138,31 +93,24 @@ export function DashboardClient({ sessionName, userEmail }: DashboardClientProps
   async function handleRegisterTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!input.trim()) {
-      toast.error("Por favor, digite uma tarefa.");
-      return;
-    }
-
     if (!hasUserEmail) {
       toast.error("Sessao invalida. Faca login novamente para salvar tarefas.");
       return;
     }
 
     try {
-      await addDoc(collection(db, "tasks"), {
+      await createTaskUseCase(firebaseClientBoardevRepository, {
         task: input,
-        user: sessionName, // Armazena o nome do usuario para associar a task
-        email: userEmail.trim(), // Armazena email validado para associar a task
+        user: sessionName,
+        email: userEmail,
         isPublic,
-        createdAt: new Date(), // Adiciona timestamp para ordenacao futura
       });
-      console.log("Tarefa salva com sucesso!");
       toast.success("Tarefa salva com sucesso!");
       setInput("");
       setIsPublic(false);
     } catch (error) {
       console.error("Erro ao salvar tarefa:", error);
-      toast.error("Erro ao salvar a tarefa.");
+      toast.error(error instanceof Error ? error.message : "Erro ao salvar a tarefa.");
     }
   }
 
@@ -185,11 +133,11 @@ export function DashboardClient({ sessionName, userEmail }: DashboardClientProps
     }
 
     try {
-      await deleteDoc(doc(db, "tasks", taskId));
+      await deleteTaskUseCase(firebaseClientBoardevRepository, taskId);
       toast.success("Task removida com sucesso.");
     } catch (error) {
       console.error("Erro ao remover task:", error);
-      toast.error("Erro ao remover a task.");
+      toast.error(error instanceof Error ? error.message : "Erro ao remover a task.");
     }
   }
 
@@ -253,7 +201,7 @@ export function DashboardClient({ sessionName, userEmail }: DashboardClientProps
           <div className="space-y-3">
             {visibleTasks.map((task) => (
               <article key={task.id} className="rounded-md border border-zinc-600 bg-zinc-800 px-4 py-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <label className="text-sm text-zinc-300">{task.isPublic ? "PUBLIC" : "PRIVATE"}</label>
                   {task.isPublic ? (
                     <button
@@ -265,17 +213,19 @@ export function DashboardClient({ sessionName, userEmail }: DashboardClientProps
                     </button>
                   ) : null}
                 </div>
-                <div className="mt-2 flex items-center justify-between text-sm text-white">
-                  {task.isPublic ? ( // Se a tarefa for publica, exibe o link para a pagina de compartilhamento da tarefa, permitindo que o usuario acesse a tarefa compartilhada e copie o link facilmente. Se a tarefa for privada, exibe apenas o texto da tarefa sem link, garantindo que tarefas privadas nao sejam acessiveis publicamente.
-                    <Link
-                      href={`/task/${task.id}`}
-                      className="underline decoration-zinc-500 underline-offset-4 transition-colors hover:text-zinc-200"
-                    >
-                      {task.task}
-                    </Link>
-                  ) : (
-                    <p>{task.task}</p>
-                  )}
+                <div className="mt-2 flex flex-col gap-3 text-sm text-white sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    {task.isPublic ? ( // Se a tarefa for publica, exibe o link para a pagina de compartilhamento da tarefa, permitindo que o usuario acesse a tarefa compartilhada e copie o link facilmente. Se a tarefa for privada, exibe apenas o texto da tarefa sem link, garantindo que tarefas privadas nao sejam acessiveis publicamente.
+                      <Link
+                        href={`/task/${task.id}`}
+                        className="wrap-break-word underline decoration-zinc-500 underline-offset-4 transition-colors hover:text-zinc-200"
+                      >
+                        {task.task}
+                      </Link>
+                    ) : (
+                      <p className="wrap-break-word">{task.task}</p>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={() => handleDeleteTask(task.id)}
@@ -286,7 +236,7 @@ export function DashboardClient({ sessionName, userEmail }: DashboardClientProps
                   </button>
                 </div>
                 {task.isPublic ? (
-                  <div className="mt-3 flex items-center gap-2 text-[11px] text-zinc-400">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
                     <span className="rounded-full border border-zinc-600 px-2 py-0.5">
                       {threadMetricsByTask[task.id]?.threads ?? 0} thread
                       {(threadMetricsByTask[task.id]?.threads ?? 0) === 1 ? "" : "s"}

@@ -11,7 +11,7 @@ export function Footer() {
                         {/* Link de contato por email */}
                         <a
                             href="mailto:danielcostacarvalhomartins06@gmail.com"
-                            className="underline-offset-4 transition hover:underline"
+                            className="break-all underline-offset-4 transition hover:underline"
                         >
                             danielcostacarvalhomartins06@gmail.com
                         </a>

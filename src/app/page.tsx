@@ -1,8 +1,9 @@
 "use client";
 
 // Componente da pagina inicial (rota "/").
-import Image from "next/image";
 import { useEffect, useState } from "react";
+import { loadLast30DaysMetricsUseCase } from "@/src/application/use-cases/boardev";
+import { browserBoardevApi } from "@/src/infrastructure/http/browser-boardev-api";
 
 export default function Home() {
   // Total de tarefas criadas nos ultimos 30 dias.
@@ -17,19 +18,7 @@ export default function Home() {
     // Busca as metricas agregadas no backend (sem listeners pesados no cliente).
     async function loadMetrics() {
       try {
-        const response = await fetch("/api/metrics/last-30-days", {
-          method: "GET",
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          throw new Error(`Falha ao carregar metricas: ${response.status}`);
-        }
-
-        const data = (await response.json()) as {
-          tasksLast30Days: number;
-          commentsLast30Days: number;
-        };
+        const data = await loadLast30DaysMetricsUseCase(browserBoardevApi);
 
         if (!isMounted) {
           return;

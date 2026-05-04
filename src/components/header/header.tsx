@@ -12,12 +12,12 @@ export function Header() {
     // Renderiza a barra superior em tema preto/branco.
     return (
         <header className="w-full border-b border-zinc-800 bg-zinc-950">
-            <section className="mx-auto flex w-full max-w-7xl items-center justify-between px-3 py-4 sm:px-6 lg:px-8">
+            <section className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-3 py-4 sm:px-6 lg:px-8">
                 {/* Navegacao principal da aplicacao */}
-                <nav className="flex items-center gap-3">
+                <nav className="flex min-w-0 items-center gap-2 sm:gap-3">
                     <Link
                         href="/"
-                        className="text-2xl font-bold tracking-tight text-white sm:text-3xl"
+                        className="shrink-0 text-2xl font-bold tracking-tight text-white sm:text-3xl"
                     >
                         Boaedev
                     </Link>
@@ -32,9 +32,9 @@ export function Header() {
                 </nav>
                 {/* Area de autenticacao - mostra login ou logout com base no status da sessao */}
                 {status === "loading" ? (
-                    <p className="text-sm text-zinc-500">Carregando...</p>
+                    <p className="ml-auto text-sm text-zinc-500">Carregando...</p>
                 ) : session ? (
-                    <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="ml-auto flex items-center gap-2 sm:gap-3">
                         {/* Nome oculto em telas pequenas para evitar overflow */}
                         <span className="hidden text-sm text-zinc-300 sm:inline">
                             Ola, {session.user?.name?.split(" ")[0]}
@@ -51,7 +51,7 @@ export function Header() {
                     pathname !== "/login" && (
                         <Link
                             href="/login"
-                            className="rounded-full border border-zinc-500 px-4 py-1.5 text-sm font-semibold text-white transition-colors hover:border-zinc-300 hover:bg-zinc-900 sm:px-7 sm:py-2"
+                            className="ml-auto rounded-full border border-zinc-500 px-4 py-1.5 text-sm font-semibold text-white transition-colors hover:border-zinc-300 hover:bg-zinc-900 sm:px-7 sm:py-2"
                         >
                             Acessar
                         </Link>
